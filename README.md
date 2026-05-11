@@ -62,12 +62,16 @@ git clone https://github.com/TechedWind707/spotizam
 cd spotizam
 ```
 
-Run the install script:
-
+On Windows
+Run the install script (Powershell):
+```powershell
+install.ps1
+```
+On macOS/ Linux/ Windows using Git Bash
+Run the install script
 ```bash
 bash install.sh
 ```
-
 What the script does:
 
 - copy `spotizam.js` into Spicetify's `Extensions` folder
@@ -75,10 +79,18 @@ What the script does:
 - if Spotify is closed: run `spicetify apply`
 - if Spotify is open: ask you to close Spotify and re-run the script
 
+Note
+If you run `install.sh` in wsl, it will only copy `spotizam.js` into Spicetify `Extensions` folder,
+You'll still need to register `spotizam.js` in Spicetify config and apply it by running these on Powershell/ Git Bash
+
+```bash
+spicetify config extensions spotizam.js
+spicetify apply
+```
 ### Option B - Manual Setup
 
 1. Put [spotizam.js](./spotizam.js) in your Spicetify `Extensions` folder.
-   Hint:
+   Note:
    This folder is usually something like `%APPDATA%\spicetify\Extensions`
    which commonly expands to a path like `C:\Users\your-name\AppData\Roaming\spicetify\Extensions`.
 2. Open a terminal.
