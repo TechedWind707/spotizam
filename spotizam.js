@@ -25,6 +25,7 @@
   // settings stay together in one predictable place.
   const STORAGE_KEY = "spotizam_config";
   const STORAGE_BACKUP_KEY = "spotizam_config_backup";
+  const RESULTS_ROUTE = "/spotizam";
   const MIN_RECORDING_SECONDS = 15;
   const MAX_RECORDING_SECONDS = 30;
   const DEFAULT_RECORDING_SECONDS = 15;
@@ -47,7 +48,9 @@
       provider: "acrcloud",
       recordingSeconds: DEFAULT_RECORDING_SECONDS,
       afterMatch: { openSong: true, playSong: false },
-      history: { enabled: false, maxItems: DEFAULT_HISTORY_ITEMS, includeAllMatches: false, items: [] },
+      resultsPage: { openAfterRecognition: true },
+      history: { enabled: false, maxItems: DEFAULT_HISTORY_ITEMS, includeAllMatches: false, searches: [] },
+      latestResults: null,
       debug: { keepAudio: false, audioDirectory: "", keepJson: false, jsonDirectory: "" },
       acrcloud: { host: "", accessKey: "", accessSecret: "" },
       audd: { apiToken: "" },
@@ -72,7 +75,9 @@
     debugWarn("No saved Spotizam config found; using defaults");
     var fallback = defaultConfig();
     normalizeAfterMatch(fallback);
+    normalizeResultsPageConfig(fallback);
     normalizeHistoryConfig(fallback);
+    normalizeLatestResultsConfig(fallback);
     normalizeDebugConfig(fallback);
     return fallback;
   }
@@ -87,22 +92,27 @@
       if (isValidProvider(parsed.provider)) cfg.provider = parsed.provider;
       cfg.recordingSeconds = clampRecordingSeconds(parsed.recordingSeconds);
       if (parsed.afterMatch) Object.assign(cfg.afterMatch, parsed.afterMatch);
+      if (parsed.resultsPage) Object.assign(cfg.resultsPage, parsed.resultsPage);
       if (parsed.history) Object.assign(cfg.history, parsed.history);
+      if (Object.prototype.hasOwnProperty.call(parsed, "latestResults")) cfg.latestResults = parsed.latestResults;
       if (parsed.debug) Object.assign(cfg.debug, parsed.debug);
       if (parsed.acrcloud) Object.assign(cfg.acrcloud, parsed.acrcloud);
       if (parsed.audd) Object.assign(cfg.audd, parsed.audd);
       normalizeAfterMatch(cfg);
+      normalizeResultsPageConfig(cfg);
       normalizeHistoryConfig(cfg);
+      normalizeLatestResultsConfig(cfg);
       normalizeDebugConfig(cfg);
       debugLog("Loaded Spotizam config from " + label + " storage", {
         provider: cfg.provider,
         recordingSeconds: cfg.recordingSeconds,
         afterMatch: cfg.afterMatch,
+        resultsPage: cfg.resultsPage,
         history: {
           enabled: cfg.history.enabled,
           maxItems: cfg.history.maxItems,
           includeAllMatches: cfg.history.includeAllMatches,
-          storedItems: cfg.history.items.length,
+          storedSearches: cfg.history.searches.length,
         },
         debug: cfg.debug,
         acrcloudPresent: !!(trimmed(cfg.acrcloud.host) || trimmed(cfg.acrcloud.accessKey) || trimmed(cfg.acrcloud.accessSecret)),
@@ -125,6 +135,11 @@
     }
   }
 
+  function normalizeResultsPageConfig(cfg) {
+    if (!cfg.resultsPage || typeof cfg.resultsPage !== "object") cfg.resultsPage = defaultConfig().resultsPage;
+    cfg.resultsPage.openAfterRecognition = !!cfg.resultsPage.openAfterRecognition;
+  }
+
   function normalizeHistoryConfig(cfg) {
     if (!cfg.history || typeof cfg.history !== "object") cfg.history = defaultConfig().history;
 
@@ -132,25 +147,79 @@
     cfg.history.includeAllMatches = !!cfg.history.includeAllMatches;
     cfg.history.maxItems = clampHistoryItems(cfg.history.maxItems);
 
-    if (!Array.isArray(cfg.history.items)) cfg.history.items = [];
-    cfg.history.items = cfg.history.items
-      .map(function (item) {
-        if (!item || typeof item !== "object") return null;
-        var title = trimmed(item.title);
-        var artist = trimmed(item.artist);
-        var query = trimmed(item.searchQuery) || makeSpotifySearchQuery(title, artist);
-        if (!title && !artist && !query) return null;
-        return {
-          title: title,
-          artist: artist,
-          spotifyUri: trimmed(item.spotifyUri) || null,
-          searchQuery: query,
-          service: trimmed(item.service) || "Unknown",
-          timestamp: trimmed(item.timestamp) || new Date().toISOString(),
-        };
-      })
-      .filter(Boolean)
-      .slice(0, cfg.history.maxItems);
+    var searches = [];
+
+    if (Array.isArray(cfg.history.searches)) {
+      searches = cfg.history.searches.map(normalizeSearchBatch).filter(Boolean);
+    } else if (Array.isArray(cfg.history.items)) {
+      searches = cfg.history.items
+        .map(function (item, index) {
+          var normalized = normalizeStoredMatchItem(item);
+          if (!normalized) return null;
+          var timestamp = normalized.timestamp || new Date().toISOString();
+          return {
+            id: makeSearchBatchId(timestamp, index),
+            timestamp: timestamp,
+            provider: isValidProvider(cfg.provider) ? cfg.provider : defaultConfig().provider,
+            service: normalized.service || "Unknown",
+            query: normalized.searchQuery || makeSpotifySearchQuery(normalized.title, normalized.artist),
+            items: [normalized],
+          };
+        })
+        .filter(Boolean);
+    }
+
+    cfg.history.searches = searches.slice(0, cfg.history.maxItems);
+    delete cfg.history.items;
+  }
+
+  function normalizeStoredMatchItem(item) {
+    if (!item || typeof item !== "object") return null;
+    var title = trimmed(item.title);
+    var artist = trimmed(item.artist);
+    var query = trimmed(item.searchQuery) || makeSpotifySearchQuery(title, artist);
+    if (!title && !artist && !query) return null;
+
+    return {
+      title: title,
+      artist: artist,
+      spotifyUri: trimmed(item.spotifyUri) || null,
+      spotifyAlbumId: trimmed(item.spotifyAlbumId) || null,
+      searchQuery: query,
+      service: trimmed(item.service) || "Unknown",
+      timestamp: trimmed(item.timestamp) || new Date().toISOString(),
+      confidence: item.confidence == null ? null : Number(item.confidence),
+      isPrimary: !!item.isPrimary,
+    };
+  }
+
+  function makeSearchBatchId(timestamp, suffix) {
+    return "search-" + String(timestamp || Date.now()).replace(/[^0-9a-z]+/gi, "-") + "-" + String(suffix == null ? 0 : suffix);
+  }
+
+  function normalizeSearchBatch(batch, index) {
+    if (!batch || typeof batch !== "object") return null;
+    var items = Array.isArray(batch.items) ? batch.items.map(normalizeStoredMatchItem).filter(Boolean) : [];
+    if (!items.length) return null;
+    var timestamp = trimmed(batch.timestamp) || items[0].timestamp || new Date().toISOString();
+
+    return {
+      id: trimmed(batch.id) || makeSearchBatchId(timestamp, index),
+      timestamp: timestamp,
+      provider: isValidProvider(batch.provider) ? batch.provider : defaultConfig().provider,
+      service: trimmed(batch.service) || items[0].service || "Unknown",
+      query: trimmed(batch.query) || items[0].searchQuery || makeSpotifySearchQuery(items[0].title, items[0].artist),
+      items: items,
+    };
+  }
+
+  function normalizeLatestResultsConfig(cfg) {
+    if (!cfg.latestResults || typeof cfg.latestResults !== "object") {
+      cfg.latestResults = null;
+      return;
+    }
+
+    cfg.latestResults = normalizeSearchBatch(cfg.latestResults, 0);
   }
 
   function normalizeDebugConfig(cfg) {
@@ -176,7 +245,9 @@
 
   function saveConfig(cfg) {
     normalizeAfterMatch(cfg);
+    normalizeResultsPageConfig(cfg);
     normalizeHistoryConfig(cfg);
+    normalizeLatestResultsConfig(cfg);
     normalizeDebugConfig(cfg);
     var serialized = JSON.stringify(cfg);
     localStorage.setItem(STORAGE_KEY, serialized);
@@ -317,9 +388,8 @@
         "padding:8px 10px;border-radius:6px;font-size:13px;display:none;" +
       "}" +
       ".spotizam-detect-panel__toast--visible{display:block}" +
-      ".spotizam-detect-panel__advanced{border:1px solid var(--spice-player);border-radius:8px;padding:6px 10px;background:var(--spice-main-elevated)}" +
-      ".spotizam-detect-panel__advanced summary{cursor:pointer;font-weight:700;color:var(--spice-text);outline:none}" +
-      ".spotizam-detect-panel__advanced-content{display:flex;flex-direction:column;gap:8px;margin-top:10px}" +
+      ".spotizam-detect-panel__section{border-top:1px solid var(--spice-player);padding-top:10px;margin-top:4px;display:flex;flex-direction:column;gap:8px}" +
+      ".spotizam-detect-panel__section-title{font-weight:700;color:var(--spice-text);font-size:13px}" +
       ".spotizam-detect-panel__history{border-top:1px solid var(--spice-player);margin-top:4px;padding-top:8px;display:none}" +
       ".spotizam-detect-panel__history-title{font-weight:700;color:var(--spice-text);font-size:13px}" +
       ".spotizam-detect-panel__history-empty{font-size:12px;color:var(--spice-subtext)}" +
@@ -328,8 +398,13 @@
       ".spotizam-detect-panel__history-item-title{font-size:13px;color:var(--spice-text);font-weight:700}" +
       ".spotizam-detect-panel__history-item-meta{font-size:11px;color:var(--spice-subtext);margin-top:2px}" +
       ".spotizam-detect-panel__history-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}" +
-      ".spotizam-detect-panel__history-link,.spotizam-detect-panel__history-copy{border:1px solid var(--spice-button);border-radius:999px;padding:3px 8px;font-size:11px;text-decoration:none;background:transparent;color:var(--spice-text);cursor:pointer}" +
-      ".spotizam-detect-panel__history-link:hover,.spotizam-detect-panel__history-copy:hover{background:var(--spice-highlight)}";
+      ".spotizam-detect-panel__history-link,.spotizam-detect-panel__history-copy,.spotizam-detect-panel__history-delete,.spotizam-detect-panel__history-toggle{border:1px solid var(--spice-button);border-radius:999px;padding:3px 8px;font-size:11px;text-decoration:none;background:transparent;color:var(--spice-text);cursor:pointer}" +
+      ".spotizam-detect-panel__history-link:hover,.spotizam-detect-panel__history-copy:hover,.spotizam-detect-panel__history-delete:hover,.spotizam-detect-panel__history-toggle:hover{background:var(--spice-highlight)}" +
+      ".spotizam-detect-panel__history-delete{border-color:rgba(255,107,107,.45);color:#ff7f7f}" +
+      ".spotizam-detect-panel__history-group-summary{display:flex;align-items:center;justify-content:space-between;gap:8px}" +
+      ".spotizam-detect-panel__history-group-copy{font-size:11px;color:var(--spice-subtext);margin-top:2px}" +
+      ".spotizam-detect-panel__history-group-items{display:flex;flex-direction:column;gap:8px;margin-top:8px}" +
+      ".spotizam-detect-panel__history-item--nested{background:var(--spice-main-elevated)}";
     document.head.appendChild(style);
   }
 
@@ -922,74 +997,101 @@
     setButtonState("match");
     var msg = "Found via " + result.service + ": " + result.title + " \u2014 " + result.artist;
     showToast(msg, false);
-
-    var onAfterMatchDone = function () {
-      recordHistoryFromResult(result);
-    };
-
+    storeLatestResultsFromResult(result);
+    recordHistoryFromResult(result);
     applyAfterMatchBehavior(result)
-      .then(onAfterMatchDone)
       .catch(function (err) {
         reportError("After-match behavior failed", err);
-        onAfterMatchDone();
       });
 
     setTimeout(function () { setButtonState("idle"); }, 2000);
   }
 
-  function recordHistoryFromResult(result) {
-    normalizeHistoryConfig(config);
-    if (!config.history.enabled) return;
-
-    var source = (config.history.includeAllMatches && Array.isArray(result.candidates) && result.candidates.length)
+  function buildStoredMatchItems(result, includeAllCandidates) {
+    var source = (includeAllCandidates && Array.isArray(result.candidates) && result.candidates.length)
       ? result.candidates
       : [result];
-
     var seen = {};
-    var newItems = [];
 
-    source.forEach(function (candidate) {
+    return source.map(function (candidate, index) {
       var title = trimmed(candidate && candidate.title);
       var artist = trimmed(candidate && candidate.artist);
       var spotifyUri = trimmed(candidate && candidate.spotifyUri) || null;
+      var spotifyAlbumId = trimmed(candidate && candidate.spotifyAlbumId) || null;
       var searchQuery = makeSpotifySearchQuery(title, artist);
       var service = trimmed(candidate && candidate.service) || trimmed(result && result.service) || "Unknown";
 
-      if (!title && !artist && !searchQuery) return;
+      if (!title && !artist && !searchQuery) return null;
 
       var dedupeKey = [title.toLowerCase(), artist.toLowerCase(), spotifyUri || "", searchQuery.toLowerCase()].join("|");
-      if (seen[dedupeKey]) return;
+      if (seen[dedupeKey]) return null;
       seen[dedupeKey] = true;
 
-      newItems.push({
+      return {
         title: title,
         artist: artist,
         spotifyUri: spotifyUri,
+        spotifyAlbumId: spotifyAlbumId,
         searchQuery: searchQuery,
         service: service,
         timestamp: new Date().toISOString(),
-      });
-    });
+        confidence: candidate && candidate.confidence != null ? Number(candidate.confidence) : null,
+        isPrimary: index === 0,
+      };
+    }).filter(Boolean);
+  }
+
+  function storeLatestResultsFromResult(result) {
+    var items = buildStoredMatchItems(result, true);
+    if (!items.length) return;
+
+    config.latestResults = {
+      id: makeSearchBatchId(new Date().toISOString(), 0),
+      timestamp: new Date().toISOString(),
+      provider: config.provider,
+      service: trimmed(result && result.service) || items[0].service || getProviderLabel(config.provider),
+      query: makeSpotifySearchQuery(result && result.title, result && result.artist) || items[0].searchQuery,
+      items: items,
+    };
+    saveConfig(config);
+  }
+
+  function recordHistoryFromResult(result) {
+    normalizeHistoryConfig(config);
+    if (!config.history.enabled) return;
+    var newItems = buildStoredMatchItems(result, config.history.includeAllMatches);
 
     if (!newItems.length) return;
 
-    config.history.items = newItems.concat(config.history.items || []).slice(0, config.history.maxItems);
+    var timestamp = new Date().toISOString();
+    var batch = {
+      id: makeSearchBatchId(timestamp, 0),
+      timestamp: timestamp,
+      provider: config.provider,
+      service: trimmed(result && result.service) || newItems[0].service || getProviderLabel(config.provider),
+      query: makeSpotifySearchQuery(result && result.title, result && result.artist) || newItems[0].searchQuery,
+      items: newItems,
+    };
+
+    config.history.searches = [batch].concat(config.history.searches || []).slice(0, config.history.maxItems);
     saveConfig(config);
     refreshHistoryUi();
   }
 
   function applyAfterMatchBehavior(result) {
     var behavior = config.afterMatch || defaultConfig().afterMatch;
+    var shouldOpenResultsPage = !!(config.resultsPage && config.resultsPage.openAfterRecognition);
     var shouldOpen = !!behavior.openSong;
     var shouldPlay = !!behavior.playSong;
     var playbackPromise;
 
-    if (!shouldOpen && !shouldPlay) shouldOpen = true;
+    if (!shouldOpen && !shouldPlay && !shouldOpenResultsPage) shouldOpen = true;
 
     debugLog("Applying after-match behavior", {
       service: result.service,
       openSong: shouldOpen,
       playSong: shouldPlay,
+      openResultsPage: shouldOpenResultsPage,
       spotifyUri: result.spotifyUri || null,
       spotifyAlbumId: result.spotifyAlbumId || null,
     });
@@ -1007,6 +1109,15 @@
         reportError("Could not play matched song", err);
       }
     }) : Promise.resolve();
+
+    if (shouldOpenResultsPage) {
+      if (shouldOpen) {
+        debugLog("Results page auto-open is enabled; skipping immediate song-page navigation");
+      }
+      return playbackPromise.then(function () {
+        openResultsPage();
+      });
+    }
 
     if (shouldOpen) {
       return ensureSpotifyUri(result).then(function () {
@@ -1360,9 +1471,48 @@
     var openSongRow = createCheckboxRow(openSongInput, "Open song page");
     var playSongRow = createCheckboxRow(playSongInput, "Start playing immediately");
 
+    var openResultsPageInput = document.createElement("input");
+    openResultsPageInput.id = "spotizam-detect-open-results-page";
+    openResultsPageInput.type = "checkbox";
+    var openResultsPageRow = createCheckboxRow(openResultsPageInput, "Open results page after recognition");
+    var openResultsPageHint = document.createElement("div");
+    openResultsPageHint.className = "spotizam-detect-panel__hint";
+    openResultsPageHint.textContent = "When this is on, Spotizam opens its custom app results page instead of jumping straight to the matched song page.";
+
+    function syncAfterMatchUi() {
+      if (openResultsPageInput.checked) {
+        openSongInput.checked = false;
+        playSongInput.checked = false;
+        openSongInput.disabled = true;
+        playSongInput.disabled = true;
+        return;
+      }
+
+      openSongInput.disabled = false;
+      playSongInput.disabled = false;
+      if (!openSongInput.checked && !playSongInput.checked) {
+        openSongInput.checked = true;
+      }
+    }
+
+    openResultsPageInput.addEventListener("change", syncAfterMatchUi);
+    openSongInput.addEventListener("change", function () {
+      if (!openResultsPageInput.checked && !openSongInput.checked && !playSongInput.checked) {
+        openSongInput.checked = true;
+      }
+    });
+    playSongInput.addEventListener("change", function () {
+      if (!openResultsPageInput.checked && !openSongInput.checked && !playSongInput.checked) {
+        openSongInput.checked = true;
+      }
+    });
+
     panel.appendChild(afterMatchLabel);
     panel.appendChild(openSongRow);
     panel.appendChild(playSongRow);
+    panel.appendChild(openResultsPageRow);
+    panel.appendChild(openResultsPageHint);
+    syncAfterMatchUi();
 
     var keepAudioInput = document.createElement("input");
     keepAudioInput.id = "spotizam-detect-keep-audio";
@@ -1406,17 +1556,6 @@
     panel.appendChild(audioDirectoryRow);
     panel.appendChild(audioDirectoryHint);
 
-    // Advanced section
-    var advancedDetails = document.createElement("details");
-    advancedDetails.className = "spotizam-detect-panel__advanced";
-
-    var advancedSummary = document.createElement("summary");
-    advancedSummary.textContent = "Advanced";
-    advancedDetails.appendChild(advancedSummary);
-
-    var advancedContent = document.createElement("div");
-    advancedContent.className = "spotizam-detect-panel__advanced-content";
-
     var historyEnabledInput = document.createElement("input");
     historyEnabledInput.id = "spotizam-detect-history-enabled";
     historyEnabledInput.type = "checkbox";
@@ -1436,7 +1575,7 @@
 
     var historyLimitHint = document.createElement("div");
     historyLimitHint.className = "spotizam-detect-panel__hint";
-    historyLimitHint.textContent = "Keep between 1 and 10 recent matches.";
+    historyLimitHint.textContent = "Keep between 1 and 10 recent search batches.";
 
     var historyIncludeAllInput = document.createElement("input");
     historyIncludeAllInput.id = "spotizam-detect-history-include-all";
@@ -1450,6 +1589,25 @@
     historyTitle.className = "spotizam-detect-panel__history-title";
     historyTitle.textContent = "History";
 
+    var historyOpenPageButton = document.createElement("button");
+    historyOpenPageButton.type = "button";
+    historyOpenPageButton.className = "spotizam-detect-panel__folder";
+    historyOpenPageButton.textContent = "Open Results Page";
+    historyOpenPageButton.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSettingsPanel();
+      openResultsPage();
+    });
+
+    var historyHeaderRow = document.createElement("div");
+    historyHeaderRow.style.display = "flex";
+    historyHeaderRow.style.alignItems = "center";
+    historyHeaderRow.style.justifyContent = "space-between";
+    historyHeaderRow.style.gap = "8px";
+    historyHeaderRow.appendChild(historyTitle);
+    historyHeaderRow.appendChild(historyOpenPageButton);
+
     var historyEmpty = document.createElement("div");
     historyEmpty.className = "spotizam-detect-panel__history-empty";
     historyEmpty.textContent = "No history yet.";
@@ -1457,7 +1615,7 @@
     var historyList = document.createElement("div");
     historyList.className = "spotizam-detect-panel__history-list";
 
-    historySection.appendChild(historyTitle);
+    historySection.appendChild(historyHeaderRow);
     historySection.appendChild(historyEmpty);
     historySection.appendChild(historyList);
 
@@ -1512,19 +1670,47 @@
 
     updateDebugJsonUi();
 
-    advancedContent.appendChild(historyEnabledRow);
-    advancedContent.appendChild(historyLimitLabel);
-    advancedContent.appendChild(historyLimitInput);
-    advancedContent.appendChild(historyLimitHint);
-    advancedContent.appendChild(historyIncludeAllRow);
-    advancedContent.appendChild(historySection);
-    advancedContent.appendChild(debugJsonLabel);
-    advancedContent.appendChild(debugJsonRow);
-    advancedContent.appendChild(debugJsonDirectoryLabel);
-    advancedContent.appendChild(debugJsonDirectoryRow);
-    advancedContent.appendChild(debugJsonHint);
-    advancedDetails.appendChild(advancedContent);
-    panel.appendChild(advancedDetails);
+    var latestSection = document.createElement("div");
+    latestSection.className = "spotizam-detect-panel__section";
+    var latestSectionTitle = document.createElement("div");
+    latestSectionTitle.className = "spotizam-detect-panel__section-title";
+    latestSectionTitle.textContent = "Latest Result";
+    var latestEmpty = document.createElement("div");
+    latestEmpty.className = "spotizam-detect-panel__history-empty";
+    latestEmpty.textContent = "No latest result yet.";
+    var latestList = document.createElement("div");
+    latestList.className = "spotizam-detect-panel__history-list";
+    latestSection.appendChild(latestSectionTitle);
+    latestSection.appendChild(latestEmpty);
+    latestSection.appendChild(latestList);
+
+    var historySettingsSection = document.createElement("div");
+    historySettingsSection.className = "spotizam-detect-panel__section";
+    var historySettingsTitle = document.createElement("div");
+    historySettingsTitle.className = "spotizam-detect-panel__section-title";
+    historySettingsTitle.textContent = "History";
+    historySettingsSection.appendChild(historySettingsTitle);
+    historySettingsSection.appendChild(historyEnabledRow);
+    historySettingsSection.appendChild(historyLimitLabel);
+    historySettingsSection.appendChild(historyLimitInput);
+    historySettingsSection.appendChild(historyLimitHint);
+    historySettingsSection.appendChild(historyIncludeAllRow);
+    historySettingsSection.appendChild(historySection);
+
+    var debugSection = document.createElement("div");
+    debugSection.className = "spotizam-detect-panel__section";
+    var debugSectionTitle = document.createElement("div");
+    debugSectionTitle.className = "spotizam-detect-panel__section-title";
+    debugSectionTitle.textContent = "Debug JSON";
+    debugSection.appendChild(debugSectionTitle);
+    debugSection.appendChild(debugJsonRow);
+    debugSection.appendChild(debugJsonDirectoryLabel);
+    debugSection.appendChild(debugJsonDirectoryRow);
+    debugSection.appendChild(debugJsonHint);
+
+    panel.appendChild(latestSection);
+    panel.appendChild(historySettingsSection);
+    panel.appendChild(debugSection);
 
     historyEnabledInput.addEventListener("change", function () {
       refreshHistoryUi();
@@ -1604,12 +1790,13 @@
       config.recordingSeconds = clampRecordingSeconds(recordingInput.value);
       config.afterMatch.openSong = !!openSongInput.checked;
       config.afterMatch.playSong = !!playSongInput.checked;
+      config.resultsPage.openAfterRecognition = !!openResultsPageInput.checked;
       config.history.enabled = !!historyEnabledInput.checked;
       config.history.maxItems = clampHistoryItems(historyLimitInput.value);
       config.history.includeAllMatches = !!historyIncludeAllInput.checked;
       config.debug.keepJson = !!debugJsonInput.checked;
       config.debug.jsonDirectory = debugJsonDirectoryInput.value.trim();
-      config.history.items = (config.history.items || []).slice(0, config.history.maxItems);
+      config.history.searches = (config.history.searches || []).slice(0, config.history.maxItems);
       config.debug.keepAudio = !!keepAudioInput.checked;
       config.debug.audioDirectory = audioDirectoryInput.value.trim();
 
@@ -1637,11 +1824,12 @@
         provider: config.provider,
         recordingSeconds: config.recordingSeconds,
         afterMatch: config.afterMatch,
+        resultsPage: config.resultsPage,
         history: {
           enabled: config.history.enabled,
           maxItems: config.history.maxItems,
           includeAllMatches: config.history.includeAllMatches,
-          storedItems: config.history.items.length,
+          storedSearches: (config.history.searches || []).length,
         },
         keepAudio: config.debug.keepAudio,
         audioDirectory: config.debug.audioDirectory,
@@ -1670,8 +1858,6 @@
           // Give UI a moment to close before triggering recording
           setTimeout(function () { onMicClick(); }, 250);
         }
-      } else {
-        closeSettingsPanel();
       }
     };
 
@@ -1689,10 +1875,15 @@
       recordingInput: recordingInput,
       openSongInput: openSongInput,
       playSongInput: playSongInput,
+      openResultsPageInput: openResultsPageInput,
       historyEnabledInput: historyEnabledInput,
       historyLimitInput: historyLimitInput,
       historyIncludeAllInput: historyIncludeAllInput,
+      latestSection: latestSection,
+      latestEmpty: latestEmpty,
+      latestList: latestList,
       historySection: historySection,
+      historyOpenPageButton: historyOpenPageButton,
       historyEmpty: historyEmpty,
       historyList: historyList,
       debugJsonInput: debugJsonInput,
@@ -1702,6 +1893,7 @@
       audioDirectoryInput: audioDirectoryInput,
       warning: warning,
       toast: toast,
+      syncAfterMatchUi: syncAfterMatchUi,
       inputs: {
         acr: { host: hostInput, key: keyInput, secret: secretInput },
         audd: auddTokenInput,
@@ -1828,7 +2020,191 @@
 
   function refreshHistoryUi() {
     if (!settingsPanel || !settingsPanel._built) return;
+    renderLatestResultsSection(settingsPanel._built, config);
     renderHistorySection(settingsPanel._built, config);
+  }
+
+  function formatTimestamp(timestamp) {
+    if (!timestamp) return "";
+    try {
+      return new Date(timestamp).toLocaleString();
+    } catch (_) {
+      return timestamp;
+    }
+  }
+
+  function renderActionButtons(container, item) {
+    var query = item.searchQuery || makeSpotifySearchQuery(item.title, item.artist);
+
+    if (item.spotifyUri) {
+      var songLink = document.createElement("a");
+      songLink.href = "#";
+      songLink.className = "spotizam-detect-panel__history-link";
+      songLink.textContent = "Open Song";
+      songLink.addEventListener("click", function (e) {
+        e.preventDefault();
+        openSpotifyUriInApp(item.spotifyUri);
+      });
+      container.appendChild(songLink);
+      if (/^spotify:track:/.test(item.spotifyUri)) {
+        var playBtn = document.createElement("button");
+        playBtn.type = "button";
+        playBtn.className = "spotizam-detect-panel__history-link";
+        playBtn.textContent = "Play";
+        playBtn.addEventListener("click", function () {
+          try {
+            if (typeof Spicetify !== "undefined" && Spicetify.Player && Spicetify.Player.playUri) {
+              Spicetify.Player.playUri(item.spotifyUri);
+            }
+          } catch (err) {
+            reportError("Could not play history item", err);
+          }
+        });
+        container.appendChild(playBtn);
+      }
+    }
+
+    if (query) {
+      var searchLink = document.createElement("a");
+      searchLink.href = "#";
+      searchLink.className = "spotizam-detect-panel__history-link";
+      searchLink.textContent = "Search on Spotify";
+      searchLink.addEventListener("click", function (e) {
+        e.preventDefault();
+        openSpotifySearchQuery(query);
+      });
+      container.appendChild(searchLink);
+
+      var copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "spotizam-detect-panel__history-copy";
+      copyBtn.textContent = "Copy Query";
+      copyBtn.addEventListener("click", function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(query)
+            .then(function () { showToast("Search query copied", false); })
+            .catch(function () { showToast("Could not copy query", true); });
+          return;
+        }
+        showToast("Clipboard is unavailable in this runtime", true);
+      });
+      container.appendChild(copyBtn);
+    }
+  }
+
+  function buildMatchRow(item, nested) {
+    var row = document.createElement("div");
+    row.className = "spotizam-detect-panel__history-item" + (nested ? " spotizam-detect-panel__history-item--nested" : "");
+
+    var title = document.createElement("div");
+    title.className = "spotizam-detect-panel__history-item-title";
+    title.textContent = (item.title || "Unknown title") + (item.artist ? " - " + item.artist : "");
+
+    var meta = document.createElement("div");
+    meta.className = "spotizam-detect-panel__history-item-meta";
+    meta.textContent = [
+      item.service || "Unknown",
+      item.confidence != null && !isNaN(Number(item.confidence)) ? ("confidence " + item.confidence) : "",
+    ].filter(Boolean).join(" | ");
+
+    var actions = document.createElement("div");
+    actions.className = "spotizam-detect-panel__history-actions";
+    renderActionButtons(actions, item);
+
+    row.appendChild(title);
+    row.appendChild(meta);
+    row.appendChild(actions);
+    return row;
+  }
+
+  function buildBatchRow(batch, options) {
+    var opts = options || {};
+    var row = document.createElement("div");
+    row.className = "spotizam-detect-panel__history-item";
+
+    var items = Array.isArray(batch.items) ? batch.items : [];
+    var first = items[0] || {};
+    var isGrouped = items.length > 1;
+
+    var summary = document.createElement("div");
+    summary.className = "spotizam-detect-panel__history-group-summary";
+
+    var left = document.createElement("div");
+    var title = document.createElement("div");
+    title.className = "spotizam-detect-panel__history-item-title";
+    title.textContent = (first.title || "Unknown title") + (first.artist ? " - " + first.artist : "");
+    var meta = document.createElement("div");
+    meta.className = "spotizam-detect-panel__history-group-copy";
+    meta.textContent = formatTimestamp(batch.timestamp) + " | " + (batch.service || "Unknown") + " | " + items.length + (items.length === 1 ? " result" : " results");
+    left.appendChild(title);
+    left.appendChild(meta);
+
+    var right = document.createElement("div");
+    right.className = "spotizam-detect-panel__history-actions";
+
+    if (isGrouped) {
+      var toggleBtn = document.createElement("button");
+      toggleBtn.type = "button";
+      toggleBtn.className = "spotizam-detect-panel__history-toggle";
+      toggleBtn.textContent = opts.expanded ? "Hide Results" : "Show All Results";
+      right.appendChild(toggleBtn);
+    }
+
+    if (opts.showDelete) {
+      var deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "spotizam-detect-panel__history-delete";
+      deleteBtn.textContent = "Delete Search";
+      deleteBtn.addEventListener("click", function () {
+        deleteHistoryBatch(opts.historyIndex);
+      });
+      right.appendChild(deleteBtn);
+    }
+
+    summary.appendChild(left);
+    summary.appendChild(right);
+    row.appendChild(summary);
+
+    if (!isGrouped) {
+      var actions = document.createElement("div");
+      actions.className = "spotizam-detect-panel__history-actions";
+      renderActionButtons(actions, first);
+      row.appendChild(actions);
+      return row;
+    }
+
+    row.appendChild(buildMatchRow(first, true));
+
+    var itemsWrap = document.createElement("div");
+    itemsWrap.className = "spotizam-detect-panel__history-group-items";
+    itemsWrap.style.display = opts.expanded ? "flex" : "none";
+    items.slice(1).forEach(function (item) {
+      itemsWrap.appendChild(buildMatchRow(item, true));
+    });
+    row.appendChild(itemsWrap);
+
+    if (right.firstChild) {
+      right.firstChild.addEventListener("click", function () {
+        itemsWrap.style.display = itemsWrap.style.display === "none" ? "flex" : "none";
+        right.firstChild.textContent = itemsWrap.style.display === "none" ? "Show All Results" : "Hide Results";
+      });
+    }
+
+    return row;
+  }
+
+  function renderLatestResultsSection(built, cfg) {
+    if (!built || !built.latestList || !built.latestEmpty) return;
+    normalizeLatestResultsConfig(cfg);
+    built.latestList.innerHTML = "";
+
+    if (!cfg.latestResults || !Array.isArray(cfg.latestResults.items) || !cfg.latestResults.items.length) {
+      built.latestEmpty.style.display = "block";
+      return;
+    }
+
+    built.latestEmpty.style.display = "none";
+    built.latestList.appendChild(buildBatchRow(cfg.latestResults, { expanded: false, showDelete: false }));
   }
 
   function renderHistorySection(built, cfg) {
@@ -1840,82 +2216,49 @@
     built.historySection.style.display = enabled ? "block" : "none";
     built.historyLimitInput.disabled = !enabled;
     built.historyIncludeAllInput.disabled = !enabled;
+    built.historyOpenPageButton.disabled = !enabled;
 
     built.historyList.innerHTML = "";
 
     if (!enabled) return;
 
-    var items = Array.isArray(cfg.history.items) ? cfg.history.items : [];
-    if (!items.length) {
+    var searches = Array.isArray(cfg.history.searches) ? cfg.history.searches : [];
+    if (!searches.length) {
       built.historyEmpty.style.display = "block";
       return;
     }
 
     built.historyEmpty.style.display = "none";
 
-    items.forEach(function (item) {
-      var row = document.createElement("div");
-      row.className = "spotizam-detect-panel__history-item";
-
-      var title = document.createElement("div");
-      title.className = "spotizam-detect-panel__history-item-title";
-      title.textContent = (item.title || "Unknown title") + (item.artist ? " - " + item.artist : "");
-
-      var meta = document.createElement("div");
-      meta.className = "spotizam-detect-panel__history-item-meta";
-      meta.textContent = (item.service || "Unknown") + " | " + (item.timestamp || "");
-
-      var actions = document.createElement("div");
-      actions.className = "spotizam-detect-panel__history-actions";
-
-      if (item.spotifyUri) {
-        var songLink = document.createElement("a");
-        songLink.href = "#";
-        songLink.className = "spotizam-detect-panel__history-link";
-        songLink.textContent = "Open Song";
-        songLink.addEventListener("click", function (e) {
-          e.preventDefault();
-          openSpotifyUriInApp(item.spotifyUri);
-        });
-        actions.appendChild(songLink);
-      }
-
-      if (item.searchQuery) {
-        var searchLink = document.createElement("a");
-        searchLink.href = "#";
-        searchLink.className = "spotizam-detect-panel__history-link";
-        searchLink.textContent = "Search on Spotify";
-        searchLink.addEventListener("click", function (e) {
-          e.preventDefault();
-          openSpotifySearchQuery(item.searchQuery);
-        });
-        actions.appendChild(searchLink);
-
-        var copyBtn = document.createElement("button");
-        copyBtn.type = "button";
-        copyBtn.className = "spotizam-detect-panel__history-copy";
-        copyBtn.textContent = "Copy Query";
-        copyBtn.addEventListener("click", function () {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(item.searchQuery)
-              .then(function () {
-                showToast("Search query copied", false);
-              })
-              .catch(function () {
-                showToast("Could not copy query", true);
-              });
-            return;
-          }
-          showToast("Clipboard is unavailable in this runtime", true);
-        });
-        actions.appendChild(copyBtn);
-      }
-
-      row.appendChild(title);
-      row.appendChild(meta);
-      row.appendChild(actions);
-      built.historyList.appendChild(row);
+    searches.forEach(function (batch, index) {
+      built.historyList.appendChild(buildBatchRow(batch, { historyIndex: index, showDelete: true, expanded: false }));
     });
+  }
+
+  function deleteHistoryBatch(index) {
+    normalizeHistoryConfig(config);
+    if (!Array.isArray(config.history.searches)) return;
+    if (index < 0 || index >= config.history.searches.length) return;
+    config.history.searches.splice(index, 1);
+    saveConfig(config);
+    refreshHistoryUi();
+    showToast("Removed search batch from Spotizam history", false);
+  }
+
+  function clearHistoryItems() {
+    normalizeHistoryConfig(config);
+    config.history.searches = [];
+    saveConfig(config);
+    refreshHistoryUi();
+    showToast("Spotizam history cleared", false);
+  }
+
+  function openResultsPage() {
+    if (typeof Spicetify !== "undefined" && Spicetify.Platform && Spicetify.Platform.History) {
+      Spicetify.Platform.History.push(RESULTS_ROUTE);
+    } else {
+      window.history.pushState({}, "", RESULTS_ROUTE);
+    }
   }
 
   function populateFields(cfg) {
@@ -1926,6 +2269,8 @@
     built.recordingInput.value = String(clampRecordingSeconds(cfg.recordingSeconds));
     built.openSongInput.checked = !!(cfg.afterMatch && cfg.afterMatch.openSong);
     built.playSongInput.checked = !!(cfg.afterMatch && cfg.afterMatch.playSong);
+    built.openResultsPageInput.checked = !!(cfg.resultsPage && cfg.resultsPage.openAfterRecognition);
+    if (built.syncAfterMatchUi) built.syncAfterMatchUi();
     built.historyEnabledInput.checked = !!(cfg.history && cfg.history.enabled);
     built.historyLimitInput.value = String(clampHistoryItems(cfg.history && cfg.history.maxItems));
     built.historyIncludeAllInput.checked = !!(cfg.history && cfg.history.includeAllMatches);
@@ -1941,6 +2286,7 @@
     built.inputs.audd.value = cfg.audd.apiToken || "";
 
     showFieldSet(cfg.provider, built.fieldSets);
+    renderLatestResultsSection(built, cfg);
     renderHistorySection(built, cfg);
   }
 
@@ -2089,6 +2435,7 @@
       built.recordingInput &&
       built.openSongInput &&
       built.playSongInput &&
+      built.openResultsPageInput &&
       built.debugJsonInput &&
       built.debugJsonDirectoryInput &&
       built.debugJsonDirectoryButton &&

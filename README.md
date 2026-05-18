@@ -1,124 +1,174 @@
 # Spotizam
 
-`Spotizam` is a Spicetify extension that works like a lightweight shazam button inside Spotify.
+`Spotizam` is a Spicetify music recognizer built as:
 
-It adds:
+- a required **extension** for mic capture, provider calls, settings, and saved data
+- an optional **custom app** for a fuller results/history page
 
-- a microphone button in Spotify's top bar
-- a settings gear next to it
-- support for `ACRCloud` and `AudD`
-- optional audio saving
-- post-match actions such as opening the song page or starting playback
+It is designed for two common workflows:
 
-## What It Does
+- quickly identify a song and jump straight into Spotify
+- sing or play something, then review the grouped results before choosing what to open
 
-When you click the mic button, Spotizam records a short sample from your microphone and sends it to the recognition provider you selected in settings.
+## Features
 
-If the provider finds a match, Spotizam can:
-
-- open the matched song inside Spotify
-- start playing the matched song
-- do both
-
-If the provider gives Spotizam a Spotify track ID directly, Spotizam uses that first. If not, it tries to resolve the result through Spotify search.
+- mic button and settings gear in Spotify
+- `ACRCloud` and `AudD` provider support
+- grouped latest results
+- grouped history by **search batch**, not just flat songs
+- optional custom app results page
+- optional debug audio saving
+- optional debug JSON saving
 
 ## Supported Providers
 
 ### ACRCloud (Recommended)
 
-- Best option if you want support for both real audio and humming
-- Default provider in Spotizam
-- Requires:
+- best option when you want support for both real audio and humming
+- default provider in Spotizam
+- requires:
   - `Host`
   - `Access Key`
   - `Access Secret`
-- Signup:
+- signup:
   - <https://console.acrcloud.com/>
-
-Notes:
-
-- You choose any project/region inside ACRCloud after signup.
-- See full setup guide [here](#acrcloud-setup-guide)
 
 ### AudD
 
-- Easy to set up
-- Good when you are playing the real audio
-- Usually worse than ACRCloud for humming
-- Requires:
+- simpler setup
+- good when you are playing the real audio clearly
+- usually worse than ACRCloud for humming
+- requires:
   - `API Token`
-- Signup:
+- signup:
   - <https://audd.io>
-  - Go to your dashboard and get Your api_token
 
 ## Installation
 
-### Option A - Installer Script (Recommended)
-Installation
-Clone the repository and navigate to the directory
+### Option A - Install Script
+
+Clone the repo and run:
+
+#### Bash
 
 ```bash
 git clone https://github.com/TechedWind707/spotizam
 cd spotizam
-```
-
-On Windows
-Run the install script (Powershell):
-```powershell
-install.ps1
-```
-On macOS/ Linux/ Windows using Git Bash
-Run the install script
-```bash
 bash install.sh
 ```
-What the script does:
 
-- copy `spotizam.js` into Spicetify's `Extensions` folder
-- register `spotizam.js` in Spicetify config
-- if Spotify is closed: run `spicetify apply`
-- if Spotify is open: ask you to close Spotify and re-run the script
+#### PowerShell
 
-Note
-If you run `install.sh` in wsl, it will only copy `spotizam.js` into Spicetify `Extensions` folder,
-You'll still need to register `spotizam.js` in Spicetify config and apply it by running these on Powershell/ Git Bash
-
-```bash
-spicetify config extensions spotizam.js
-spicetify apply
+```powershell
+git clone https://github.com/TechedWind707/spotizam
+cd spotizam
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
+
+The script now does this:
+
+1. installs the `spotizam.js` extension
+2. asks whether you also want the optional `spotizam` custom app
+3. registers the selected Spicetify entries
+4. runs `spicetify apply` when Spotify is closed
+
+The extension is the base install. The custom app is optional.
+
 ### Option B - Manual Setup
 
-1. Put [spotizam.js](./spotizam.js) in your Spicetify `Extensions` folder.
-   Note:
-   This folder is usually something like `%APPDATA%\spicetify\Extensions`
-   which commonly expands to a path like `C:\Users\your-name\AppData\Roaming\spicetify\Extensions`.
-2. Open a terminal.
-3. Run:
+#### Extension
 
-```bash
-spicetify config extensions spotizam.js
-```
-4. Close Spotify
-5. Run:
+1. Put [spotizam.js](./spotizam.js) in your Spicetify `Extensions` folder.
+
+   Hint:
+   this folder is usually something like:
+
+   ```text
+   %APPDATA%\spicetify\Extensions
+   ```
+
+2. Register it:
+
+   ```bash
+   spicetify config extensions spotizam.js
+   ```
+
+#### Optional custom app
+
+1. Put the whole [spotizam](./spotizam) folder in your Spicetify `CustomApps` folder:
+
+   ```text
+   %APPDATA%\spicetify\CustomApps
+   ```
+
+2. Register it:
+
+   ```bash
+   spicetify config custom_apps spotizam
+   ```
+
+#### Apply
+
+Close Spotify, then run:
 
 ```bash
 spicetify apply
 ```
-4. Restart Spotify.
-5. If the button does not appear immediately, do a hard refresh inside Spotify with `Ctrl+Shift+R`.
-6. The first time you use the mic, Spotify will ask for microphone permission.
-7. If you enable audio saving or json saving and choose a folder, Spotify or the browser runtime may also ask for folder access permission.
+
+Restart Spotify after that.
+
+If the mic or gear button does not appear right away, try:
+
+```text
+Ctrl+Shift+R
+```
+
+inside Spotify.
+
+## Permissions
+
+The first time you use Spotizam, Spotify will ask for microphone permission.
+
+If you enable:
+
+- debug audio saving
+- debug JSON saving
+- folder selection for either one
+
+Spotify or the browser runtime may also ask for folder access permission.
+
+## How Spotizam Is Structured
+
+### Extension
+
+The extension handles:
+
+- mic capture
+- provider requests
+- quick settings
+- grouped result storage
+- post-match behavior
+- opening the optional custom app
+
+### Custom app
+
+The optional custom app handles:
+
+- fuller latest result browsing
+- grouped search history browsing
+- per-result Spotify actions in a larger UI
+
+Both surfaces read from the same local storage config.
 
 ## Where Settings Are Stored
 
-Spotizam stores its settings in browser storage under:
+Spotizam stores its settings in:
 
 ```text
 localStorage["spotizam_config"]
 ```
 
-The saved shape looks like this:
+The current saved shape is roughly:
 
 ```json
 {
@@ -128,10 +178,43 @@ The saved shape looks like this:
     "openSong": true,
     "playSong": false
   },
+  "resultsPage": {
+    "openAfterRecognition": true
+  },
   "history": {
     "enabled": false,
-    "limit": 5,
-    "includeAllMatches": false
+    "maxItems": 5,
+    "includeAllMatches": false,
+    "searches": [
+      {
+        "id": "search-...",
+        "timestamp": "2026-05-17T00:00:00.000Z",
+        "provider": "acrcloud",
+        "service": "ACRCloud",
+        "query": "Arise Don Moen",
+        "items": [
+          {
+            "title": "Arise",
+            "artist": "Don Moen",
+            "spotifyUri": "spotify:track:...",
+            "spotifyAlbumId": null,
+            "searchQuery": "Arise Don Moen",
+            "service": "ACRCloud",
+            "timestamp": "2026-05-17T00:00:00.000Z",
+            "confidence": 0.96,
+            "isPrimary": true
+          }
+        ]
+      }
+    ]
+  },
+  "latestResults": {
+    "id": "search-...",
+    "timestamp": "2026-05-17T00:00:00.000Z",
+    "provider": "acrcloud",
+    "service": "ACRCloud",
+    "query": "Arise Don Moen",
+    "items": []
   },
   "debug": {
     "keepAudio": false,
@@ -154,11 +237,11 @@ The saved shape looks like this:
 
 1. Click the gear icon next to the mic.
 2. Choose your provider.
-3. Enter the credentials for that provider.
-4. Pick how long recordings should be.
-5. Choose what should happen after a match.
+3. Enter your credentials.
+4. Pick recording length and post-match behavior.
+5. Choose whether Spotizam should open the custom app results page after recognition.
 6. Click `Save`.
-7. Click the mic to identify a song or hum a melody.
+7. Click the mic to recognize a song or a hummed melody.
 
 ## Settings Explained
 
@@ -173,8 +256,6 @@ Only the selected provider is used when you click the mic.
 
 ### Recording Length
 
-Allowed range:
-
 - minimum: `15` seconds
 - maximum: `30` seconds
 
@@ -185,87 +266,89 @@ Behavior:
 
 ### After Match
 
-Options:
+Controls:
 
 - `Open song page`
 - `Start playing immediately`
-- `Both`
+- `Open results page after recognition`
 
 Behavior:
 
-- checking `Both` automatically checks the other two boxes
-- unchecking either of the other two automatically unchecks `Both`
-- if Spotizam can resolve the Spotify track, it tries to open the song in Spotify directly
-
-### Debug Audio
-
-`Keep copy of recorded audio`
-
-- Saves the exact audio blob that is about to be sent to the recognition provider
-- Useful when you want to listen to what the provider actually received
-
-`Choose Folder`
-
-- Lets you pick a folder for debug audio in the current Spotify session
-- Spotify may ask for folder permission when you do this
-- If folder-picking is unavailable in the current Spotify runtime, Spotizam falls back to a normal browser download
-
-### Debug JSON
-
-`Keep copy of returned JSON`
-
-- Saves the raw provider response payload (`ACRCloud` or `AudD`) for each recognition request
-- Useful when debugging parsing/matching behavior
-
-`Choose Folder`
-
-- Lets you pick a folder for debug JSON in the current Spotify session
-- If folder-picking is unavailable in the current runtime, Spotizam falls back to a normal browser download
+- if `Open results page after recognition` is enabled, it becomes the main navigation mode
+- in that mode, direct post-match navigation options are disabled
+- if it is off, `Open song page` and `Start playing immediately` work normally
 
 ### History
 
-Advanced settings include a history feature for recent matches.
+Controls:
 
-Options:
-
-- `Enable history`
-- `Max items (1-10)`
-- `Include all matches from provider response`
+- `Enable recognition history`
+- `History size`
+- `Include all provider matches when available`
 
 Behavior:
 
-- when disabled, no new history entries are recorded
-- when enabled, Spotizam keeps the latest entries up to the selected limit
-- `Include all matches` stores all candidates returned by the provider, not only the best match
+- history is stored as recent **search batches**
+- one search can contain one or many returned songs
+- `History size` means how many recent search batches to keep
+- `Include all provider matches` stores all candidates returned by the provider, not just the best one
+
+### Latest Result and History UI
+
+Inside the extension panel:
+
+- `Latest Result` shows the best match first
+- if more than one match came back, you can expand to show the rest
+- `History` is grouped by search batch
+- grouped searches show timestamp, provider/service, result count, and top match
+- each result prioritizes prime actions like opening in Spotify and playback before secondary actions like search/copy
+
+Inside the custom app:
+
+- the same grouped model is shown in a larger browsing surface
+
+### Debug Audio
+
+- `Keep copy of recorded audio`
+- choose a folder for the current Spotify session
+
+If folder picking is unavailable, Spotizam falls back to a normal download.
+
+### Debug JSON
+
+- `Keep copy of returned JSON`
+- choose a folder for the current Spotify session
+
+If folder picking is unavailable, Spotizam falls back to a normal download.
 
 ## Button States
 
 ### Idle
 
-- Mic icon is visible
+- mic icon is visible
 
 ### Recording
 
-- Mic glows red
+- mic glows red
 - before `15` seconds, clicking again does not stop recording
 - after `15` seconds, clicking again stops early
 
 ### Processing
 
-- Spinner appears
-- Tooltip shows which provider is being used
+- spinner appears
+- tooltip shows which provider is being used
 
 ### Match
 
-- Green check icon
+- green check icon
 
 ### Error
 
-- Red X icon
+- red X icon
 
 ## Debug Logging
 
-Spotizam intentionally logs useful information to the browser console.
+Spotizam intentionally logs useful information with a `[spotizam]` prefix.
 
 Examples:
 
@@ -277,23 +360,24 @@ Examples:
 - whether a Spotify URI came from the provider directly or from fallback search
 - after-match behavior decisions
 
-These logs are helpful for troubleshooting.
+## ACRCloud Setup Guide
 
-## Provider Notes
-
-### ACRCloud
-
-Spotizam supports ACRCloud's normal music matches and humming matches.
-
-If ACRCloud returns Spotify metadata, Spotizam uses the returned track ID directly.
-
-### AudD
-
-AudD uploads are sent as multipart form data using the `file` field.
+1. Go to <https://console.acrcloud.com/>
+2. Create an account and sign in
+3. Create a project under `Projects -> Audio & Video Recognition`
+4. Recommended choices:
+   - `Audio Source`: `Recorded Audio`
+   - engine with normal recognition + humming support
+   - enable Spotify in third-party integrations if available
+5. Copy:
+   - `Host`
+   - `Access Key`
+   - `Secret Key`
+6. Paste them into Spotizam settings and save
 
 ## Troubleshooting
 
-### The mic or gear icon is missing
+### Mic or gear is missing
 
 Try:
 
@@ -303,24 +387,21 @@ Ctrl+Shift+R
 
 inside Spotify.
 
-Spotify sometimes keeps stale page state around until a hard refresh.
-
-If the last page open before you closed Spotify was any other page apart from the homepage, Spotizam can sometimes reattach to that page header instead of the normal `Your Library` area after startup.
-
-This should not happen but if it does the easiest fix is:
-
-1. Go back to Spotify's normal home/library area.
-2. Press `Ctrl+Shift+R`.
-
-That usually resets the page state and makes the mic and gear return to the expected library header area.
-
-### A provider says there was no match
+### Custom app route opens but looks empty
 
 Check:
 
-- whether your mic recording is clear enough
-- whether the selected provider is the one you intended to use
-- whether the provider returned a Spotify ID in the console logs
+- the `spotizam` folder is really inside `%APPDATA%\spicetify\CustomApps`
+- `spicetify config custom_apps spotizam` has been run
+- `spicetify apply` was run after that
+
+### Provider says no match
+
+Check:
+
+- your mic recording quality
+- whether you selected the provider you intended
+- the provider payload in console logs
 
 ### ACRCloud says `invalid signature`
 
@@ -330,114 +411,6 @@ Double-check:
 - `Access Key`
 - `Access Secret`
 
-Make sure they all belong to the same ACRCloud project and region.
+## Changelog
 
-### Audio recording or Response JSON does not save into the chosen folder
-
-Folder handles are permission-based and session-based.
-
-That means:
-
-- you may need to choose the folder again after restarting Spotify
-- some Spotify builds may only allow download fallback
-
-## Development Notes
-
-Spotizam is intentionally a single plain JavaScript file:
-
-- no bundler
-- no `import`
-- no `require`
-- plain DOM APIs only
-- all UI styles are injected with a `<style>` tag
-
-This keeps it easy to drop into a normal Spicetify setup.
-
-## ACRCloud Setup Guide
-
-Spotizam uses your own ACRCloud project. Setting it up usually takes only a few minutes.
-
-### Step 1 - Create an ACRCloud account
-
-1. Go to <https://console.acrcloud.com>
-2. Click `Sign Up`
-3. Register with your email
-4. Verify your email and log in
-5. After login, you will land on the ACRCloud dashboard
-
-Notes:
-
-- ACRCloud usually starts with a trial period first
-- after the trial, ACRCloud is billed separately according to its current pricing
-- check the live pricing page in your ACRCloud console before you publish or share setup instructions
-- you may need billing details to keep using the service after the trial ends
-
-### Step 2 - Create your project
-
-1. On the dashboard you see a menu that has two parts: Programming Skills Required and Programming Skills Not Required.
-Under Programming Skills Required, Click the Audio and Video Recognition link
-![Audio and video recognition section](./assets/Audio%20and%20Video%20Recognition.png)
-2. In the left sidebar, open `Projects`
-3. Choose `Audio & Video Recognition`
-![Sidebar](./assets/Sidebar.png)
-4. Click `Create Project`
-![Create project](./assets/Create%20Project.png)
-5. Fill in the project like this:
-
-| Setting | Recommended value |
-|---|---|
-| `Project Name` | Anything you like, for example `Spotizam` |
-| `Audio Source` | `Recorded Audio` |
-| `Audio Engine` | `Audio Fingerprinting & Cover Song (Humming) Identification` |
-| `Buckets` | `ACRCloud Music` |
-| `3rd Party ID Integration` | `Enable Spotify` |
-
-![Settings](./assets/Settings.png)
-
-Notes:
-- The Audio Fingerprinting & Cover Song (Humming) Identification option is the important part if you want both real audio and humming support
-- Spotify integration is the one Spotizam cares about most because it lets matches resolve into Spotify tracks more directly
-- You can enable other third-party integrations too if you want them for your own ACRCloud usage
-
-### Step 3 - Copy your credentials
-
-After the project is created, copy these three values:
-
-- `Host`
-- `Access Key`
-- `Secret Key`
-
-They usually look like:
-
-- Host: `identify-eu-west-1.acrcloud.com`
-- Access Key: long alphanumeric string
-- Secret Key: long alphanumeric string
-
-Important:
-
-- all three values must come from the same ACRCloud project
-- if you mix credentials from different projects or regions, ACRCloud will reject the request with `invalid signature`
-
-### Step 4 - Paste them into Spotizam
-
-1. Open Spotify with Spicetify enabled
-2. Click the Spotizam gear icon
-3. Make sure `ACRCloud` is selected as the provider
-4. Paste:
-   - `Host`
-   - `Access Key`
-   - `Secret Key`
-5. Click `Save`
-
-### Step 5 - Test it
-
-1. Play a song out loud near your microphone, or hum a tune
-2. Click the mic button
-3. Accept microphone permission if Spotify asks
-4. Wait for the match result
-
-If you enabled audio or json saving:
-
-- choose a folder when prompted
-- accept folder access permission if Spotify asks
-- Spotizam will save the exact recorded audio blob it sends to ACRCloud or JSON returned from your recognition service
+See [CHANGELOG.md](./CHANGELOG.md).

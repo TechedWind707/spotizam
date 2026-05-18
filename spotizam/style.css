@@ -1,0 +1,146 @@
+.spotizam-app {
+  padding: 24px 32px 96px;
+  color: var(--spice-text);
+}
+
+.spotizam-app__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.spotizam-app__title {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.05;
+  font-weight: 800;
+}
+
+.spotizam-app__copy {
+  margin: 10px 0 0;
+  color: var(--spice-subtext);
+  font-size: 14px;
+  max-width: 720px;
+}
+
+.spotizam-app__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spotizam-app__button {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: var(--spice-button);
+  color: var(--spice-text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.spotizam-app__button:hover {
+  background: var(--spice-button-active);
+}
+
+.spotizam-app__button--secondary {
+  background: var(--spice-player);
+}
+
+.spotizam-app__button--secondary:hover {
+  background: var(--spice-highlight);
+}
+
+.spotizam-app__button--danger {
+  background: rgba(255, 107, 107, 0.18);
+  color: #ff7f7f;
+}
+
+.spotizam-app__button--danger:hover {
+  background: rgba(255, 107, 107, 0.28);
+}
+
+.spotizam-app__section + .spotizam-app__section {
+  margin-top: 28px;
+}
+
+.spotizam-app__group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.spotizam-app__section-title {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.spotizam-app__section-copy {
+  margin: 0 0 14px;
+  color: var(--spice-subtext);
+  font-size: 14px;
+}
+
+.spotizam-app__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spotizam-app__card {
+  border: 1px solid var(--spice-player);
+  border-radius: 10px;
+  padding: 16px;
+  background: var(--spice-main-elevated);
+}
+
+.spotizam-app__card--primary {
+  border-color: rgba(30, 215, 96, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(30, 215, 96, 0.15);
+}
+
+.spotizam-app__card-title {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.spotizam-app__card-meta {
+  margin-top: 4px;
+  color: var(--spice-subtext);
+  font-size: 13px;
+}
+
+.spotizam-app__card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.spotizam-app__empty {
+  padding: 18px;
+  border: 1px dashed var(--spice-player);
+  border-radius: 10px;
+  color: var(--spice-subtext);
+  background: var(--spice-main-elevated);
+}
+
+@media (max-width: 900px) {
+  .spotizam-app {
+    padding: 18px 16px 92px;
+  }
+
+  .spotizam-app__hero {
+    flex-direction: column;
+  }
+
+  .spotizam-app__title {
+    font-size: 28px;
+  }
+}
