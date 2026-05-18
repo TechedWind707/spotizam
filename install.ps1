@@ -4,7 +4,7 @@ Installs the Spotizam extension and optionally the Spotizam custom app for Spice
 
 .DESCRIPTION
 This script installs `spotizam.js` into `%APPDATA%\spicetify\Extensions` as the base install.
-It then interactively asks whether you also want to install the optional `spotizam` custom app
+It then interactively asks whether you also want to install the optional `spotizam-app` custom app
 into `%APPDATA%\spicetify\CustomApps`.
 
 If Spotify is closed, the script registers the selected components with Spicetify and runs
@@ -28,7 +28,7 @@ if (-not $SourcePath) {
 }
 
 if (-not $SourceAppPath) {
-    $SourceAppPath = Join-Path $scriptDir 'spotizam'
+    $SourceAppPath = Join-Path $scriptDir 'spotizam-app'
 }
 
 if (-not (Test-Path -Path $SourcePath -PathType Leaf)) {
@@ -84,7 +84,7 @@ if ($installCustomApp) {
         New-Item -ItemType Directory -Path $customAppsDir -Force | Out-Null
     }
 
-    $customAppDestPath = Join-Path $customAppsDir 'spotizam'
+    $customAppDestPath = Join-Path $customAppsDir 'spotizam-app'
 
     try {
         if (Test-Path $customAppDestPath) {
@@ -110,7 +110,7 @@ if (-not $spicetifyCmd) {
     Write-Host "Run these manually after fixing PATH:" -ForegroundColor Yellow
     Write-Host "  spicetify config extensions spotizam.js"
     if ($installCustomApp) {
-        Write-Host "  spicetify config custom_apps spotizam"
+        Write-Host "  spicetify config custom_apps spotizam-app"
     }
     Write-Host "  spicetify apply"
     exit 4
@@ -129,8 +129,8 @@ if ($cfgExtensionsOutput -notmatch '(^|\s)spotizam\.js(\s|$)') {
 
 if ($installCustomApp) {
     $cfgAppsOutput = & spicetify config custom_apps 2>&1
-    if ($cfgAppsOutput -notmatch '(^|\s)spotizam(\s|$)') {
-        $cfgSetAppOutput = & spicetify config custom_apps spotizam 2>&1
+    if ($cfgAppsOutput -notmatch '(^|\s)spotizam-app(\s|$)') {
+        $cfgSetAppOutput = & spicetify config custom_apps spotizam-app 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Host "Warning: failed to register custom app with Spicetify." -ForegroundColor Yellow
             Write-Host $cfgSetAppOutput

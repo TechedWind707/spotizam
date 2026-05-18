@@ -25,7 +25,7 @@
   // settings stay together in one predictable place.
   const STORAGE_KEY = "spotizam_config";
   const STORAGE_BACKUP_KEY = "spotizam_config_backup";
-  const RESULTS_ROUTE = "/spotizam";
+  const RESULTS_ROUTE = "/spotizam-app";
   const MIN_RECORDING_SECONDS = 15;
   const MAX_RECORDING_SECONDS = 30;
   const DEFAULT_RECORDING_SECONDS = 15;

@@ -8,7 +8,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_EXTENSION="${1:-$SCRIPT_DIR/spotizam.js}"
-SOURCE_APP_DIR="$SCRIPT_DIR/spotizam"
+SOURCE_APP_DIR="$SCRIPT_DIR/spotizam-app"
 
 if [ ! -f "$SOURCE_EXTENSION" ]; then
   echo "Source extension file not found: $SOURCE_EXTENSION" >&2
@@ -111,9 +111,9 @@ echo "Copied extension: $SOURCE_EXTENSION -> $SPICETIFY_EXT_DIR/spotizam.js"
 
 if [ "$copy_custom_app" = true ]; then
   mkdir -p "$SPICETIFY_APP_DIR"
-  rm -rf "$SPICETIFY_APP_DIR/spotizam"
-  cp -R -- "$SOURCE_APP_DIR" "$SPICETIFY_APP_DIR/spotizam"
-  echo "Copied custom app: $SOURCE_APP_DIR -> $SPICETIFY_APP_DIR/spotizam"
+  rm -rf "$SPICETIFY_APP_DIR/spotizam-app"
+  cp -R -- "$SOURCE_APP_DIR" "$SPICETIFY_APP_DIR/spotizam-app"
+  echo "Copied custom app: $SOURCE_APP_DIR -> $SPICETIFY_APP_DIR/spotizam-app"
 fi
 
 if [ "$IS_WSL" = true ]; then
@@ -121,13 +121,13 @@ if [ "$IS_WSL" = true ]; then
   echo "=== WSL: Files copied successfully ==="
   echo "Extension: $SPICETIFY_EXT_DIR/spotizam.js"
   if [ "$copy_custom_app" = true ]; then
-    echo "Custom app: $SPICETIFY_APP_DIR/spotizam"
+    echo "Custom app: $SPICETIFY_APP_DIR/spotizam-app"
   fi
   echo ""
   echo "Run these commands in PowerShell or Git Bash (not WSL):"
   echo "  spicetify config extensions spotizam.js"
   if [ "$copy_custom_app" = true ]; then
-    echo "  spicetify config custom_apps spotizam"
+    echo "  spicetify config custom_apps spotizam-app"
   fi
   echo "  spicetify apply"
   exit 0
@@ -137,7 +137,7 @@ if [ "${#SPICETIFY_CMD[@]}" -eq 0 ]; then
   echo "spicetify not found in PATH. Install Spicetify or run manually:" >&2
   echo "  spicetify config extensions spotizam.js" >&2
   if [ "$copy_custom_app" = true ]; then
-    echo "  spicetify config custom_apps spotizam" >&2
+    echo "  spicetify config custom_apps spotizam-app" >&2
   fi
   echo "  spicetify apply" >&2
   exit 3
@@ -167,8 +167,8 @@ if ! "${SPICETIFY_CMD[@]}" config extensions 2>/dev/null | grep -Eq '(^|[[:space
 fi
 
 if [ "$copy_custom_app" = true ]; then
-  if ! "${SPICETIFY_CMD[@]}" config custom_apps 2>/dev/null | grep -Eq '(^|[[:space:]])spotizam($|[[:space:]])'; then
-    "${SPICETIFY_CMD[@]}" config custom_apps spotizam
+  if ! "${SPICETIFY_CMD[@]}" config custom_apps 2>/dev/null | grep -Eq '(^|[[:space:]])spotizam-app($|[[:space:]])'; then
+    "${SPICETIFY_CMD[@]}" config custom_apps spotizam-app
   fi
 fi
 

@@ -15,6 +15,7 @@
 - flattened the settings panel by removing the old `Advanced` wrapper
 - `History size` now means recent **search batches**, not flat songs
 - `Open results page after recognition` now targets the real custom app route
+- renamed the custom app folder/route target from `spotizam` to `spotizam-app` to keep it distinct from the repo/extension name
 - action order now prioritizes primary actions like opening in Spotify and playback before secondary actions
 - install flow now supports extension-first installation with optional custom app setup
 

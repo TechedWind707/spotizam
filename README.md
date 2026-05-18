@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 The script now does this:
 
 1. installs the `spotizam.js` extension
-2. asks whether you also want the optional `spotizam` custom app
+2. asks whether you also want the optional `spotizam-app` custom app
 3. registers the selected Spicetify entries
 4. runs `spicetify apply` when Spotify is closed
 
@@ -95,7 +95,7 @@ The extension is the base install. The custom app is optional.
 
 #### Optional custom app
 
-1. Put the whole [spotizam](./spotizam) folder in your Spicetify `CustomApps` folder:
+1. Put the whole [spotizam-app](./spotizam-app) folder in your Spicetify `CustomApps` folder:
 
    ```text
    %APPDATA%\spicetify\CustomApps
@@ -104,7 +104,7 @@ The extension is the base install. The custom app is optional.
 2. Register it:
 
    ```bash
-   spicetify config custom_apps spotizam
+   spicetify config custom_apps spotizam-app
    ```
 
 #### Apply
@@ -391,8 +391,8 @@ inside Spotify.
 
 Check:
 
-- the `spotizam` folder is really inside `%APPDATA%\spicetify\CustomApps`
-- `spicetify config custom_apps spotizam` has been run
+- the `spotizam-app` folder is really inside `%APPDATA%\spicetify\CustomApps`
+- `spicetify config custom_apps spotizam-app` has been run
 - `spicetify apply` was run after that
 
 ### Provider says no match
