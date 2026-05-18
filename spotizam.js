@@ -301,15 +301,17 @@
     var style = document.createElement("style");
     style.id = "spotizam-detect-styles";
     style.textContent =
-      ".spotizam-detect-btn,.spotizam-detect-settings-btn{" +
+      ".spotizam-detect-btn,.spotizam-detect-settings-btn,.spotizam-detect-cancel-btn{" +
         "background:none;border:none;color:var(--spice-text);cursor:pointer;" +
         "padding:6px 8px;border-radius:4px;display:flex;align-items:center;justify-content:center;" +
         "transition:background .15s ease;position:relative;flex-shrink:0;" +
       "}" +
-      ".spotizam-detect-btn:hover,.spotizam-detect-settings-btn:hover{background:var(--spice-highlight)}" +
-      ".spotizam-detect-btn svg,.spotizam-detect-settings-btn svg{width:" + ICON_SIZE + "px;height:" + ICON_SIZE + "px}" +
+      ".spotizam-detect-btn:hover,.spotizam-detect-settings-btn:hover,.spotizam-detect-cancel-btn:hover{background:var(--spice-highlight)}" +
+      ".spotizam-detect-btn svg,.spotizam-detect-settings-btn svg,.spotizam-detect-cancel-btn svg{width:" + ICON_SIZE + "px;height:" + ICON_SIZE + "px}" +
       ".spotizam-detect-btn--recording svg{color:#e22162;animation:spotizam-detect-pulse .8s ease infinite alternate}" +
       ".spotizam-detect-btn--recording{filter:drop-shadow(0 0 6px #e22162)}" +
+      ".spotizam-detect-cancel-btn{display:none;color:#ff7f7f}" +
+      ".spotizam-detect-cancel-btn--visible{display:flex}" +
       "@keyframes spotizam-detect-pulse{from{transform:scale(1)}to{transform:scale(1.15)}}" +
       ".spotizam-detect-btn--processing svg{animation:spotizam-detect-spin 1s linear infinite}" +
       "@keyframes spotizam-detect-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}" +
@@ -451,6 +453,7 @@
   // the mic button can react correctly to repeated clicks.
   var config = loadConfig();
   var micBtn = null;
+  var cancelBtn = null;
   var settingsBtn = null;
   var settingsPanel = null;
   var currentState = "idle"; // idle | recording | processing | match | error
@@ -522,6 +525,7 @@
     currentState = state;
     micBtn.className = "spotizam-detect-btn";
     micBtn.removeAttribute("title");
+    updateCancelButtonVisibility(state === "recording");
 
     switch (state) {
       case "idle":
@@ -548,6 +552,16 @@
     }
   }
 
+  function updateCancelButtonVisibility(visible) {
+    if (!cancelBtn) return;
+    cancelBtn.className = "spotizam-detect-cancel-btn" + (visible ? " spotizam-detect-cancel-btn--visible" : "");
+    if (visible) {
+      cancelBtn.setAttribute("title", "Cancel recording and discard");
+      return;
+    }
+    cancelBtn.removeAttribute("title");
+  }
+
   // ── Audio capture ──────────────────────────────────────────────────────────
 
   // Record audio from the microphone. The user must record for at least
@@ -563,6 +577,8 @@
       var maxMs = clampRecordingSeconds(durationSeconds) * 1000;
       var minMs = MIN_RECORDING_SECONDS * 1000;
       var settled = false;
+      var cancelled = false;
+      var cancelReason = null;
 
       debugLog("Requesting microphone permission");
       navigator.mediaDevices
@@ -609,9 +625,14 @@
           };
 
           recorder.onstop = function () {
+            if (settled && !cancelled) return;
             settled = true;
-            var blob = new Blob(chunks, { type: "audio/webm" });
             cleanup();
+            if (cancelled) {
+              reject(cancelReason || new Error("Recording cancelled"));
+              return;
+            }
+            var blob = new Blob(chunks, { type: "audio/webm" });
             debugLog("Recording complete", { bytes: blob.size, type: blob.type, chunks: chunks.length });
             if (!blob.size) {
               reject(new Error("Recording was empty"));
@@ -637,6 +658,13 @@
                 return;
               }
               debugLog("Stopping recording early after minimum duration");
+              stopRecorder();
+            },
+            cancel: function () {
+              if (!activeRecording) return;
+              debugLog("Cancelling recording and discarding captured audio");
+              cancelled = true;
+              cancelReason = new Error("Recording cancelled");
               stopRecorder();
             },
           };
@@ -1316,10 +1344,21 @@
   }
 
   function handleError(err) {
+    if (isCancelledRecordingError(err)) {
+      debugLog("Recording cancelled by user");
+      setButtonState("idle");
+      showToast("Recording cancelled", false);
+      return;
+    }
     setButtonState("error");
     var msg = reportError("Recognition failed", err && err.originalError ? err.originalError : err);
     showToast(msg, true);
     setTimeout(function () { setButtonState("idle"); }, 2000);
+  }
+
+  function isCancelledRecordingError(err) {
+    var message = stringifyError(err);
+    return message === "Recording cancelled";
   }
 
   // ── Mic button click handler ───────────────────────────────────────────────
@@ -1371,6 +1410,19 @@
       })
       .then(handleMatch)
       .catch(handleError);
+  }
+
+  function onCancelRecordingClick(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (currentState !== "recording" || !activeRecording || typeof activeRecording.cancel !== "function") {
+      return;
+    }
+
+    activeRecording.cancel();
   }
 
   // ── Settings panel ─────────────────────────────────────────────────────────
@@ -2375,20 +2427,27 @@
   function handleDelegatedButtonEvent(e) {
     var target = e.target;
     var clickedMic = closestById(target, "spotizam-detect-btn");
+    var clickedCancel = closestById(target, "spotizam-detect-cancel-btn");
     var clickedSettings = closestById(target, "spotizam-detect-settings-btn");
 
-    if (!clickedMic && !clickedSettings) return;
-    debugLog("Delegated click captured", clickedMic ? "mic" : "settings");
+    if (!clickedMic && !clickedCancel && !clickedSettings) return;
+    debugLog("Delegated click captured", clickedMic ? "mic" : (clickedCancel ? "cancel" : "settings"));
 
     e.preventDefault();
     e.stopPropagation();
     if (e.stopImmediatePropagation) e.stopImmediatePropagation();
 
     micBtn = document.getElementById("spotizam-detect-btn") || micBtn;
+    cancelBtn = document.getElementById("spotizam-detect-cancel-btn") || cancelBtn;
     settingsBtn = document.getElementById("spotizam-detect-settings-btn") || settingsBtn;
 
     if (clickedMic) {
       onMicClick();
+      return;
+    }
+
+    if (clickedCancel) {
+      onCancelRecordingClick();
       return;
     }
 
@@ -2565,6 +2624,14 @@
     micBtn.setAttribute("title", "Start Recording");
     micBtn.addEventListener("click", onMicClick);
 
+    cancelBtn = document.createElement("button");
+    cancelBtn.id = "spotizam-detect-cancel-btn";
+    cancelBtn.className = "spotizam-detect-cancel-btn";
+    cancelBtn.type = "button";
+    cancelBtn.innerHTML = ICON_X;
+    cancelBtn.setAttribute("aria-label", "Cancel recording");
+    cancelBtn.addEventListener("click", onCancelRecordingClick);
+
     // Settings button
     settingsBtn = document.createElement("button");
     settingsBtn.id = "spotizam-detect-settings-btn";
@@ -2579,6 +2646,7 @@
     });
 
     container.appendChild(micBtn);
+    container.appendChild(cancelBtn);
     container.appendChild(settingsBtn);
 
     var libraryAnchor = findLibraryHeadingAnchor();
@@ -2632,6 +2700,7 @@
     var selectors = [
       "#spotizam-detect-container",
       "#spotizam-detect-btn",
+      "#spotizam-detect-cancel-btn",
       "#spotizam-detect-settings-btn",
       "#spotizam-detect-panel",
     ];
